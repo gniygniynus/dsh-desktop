@@ -1,0 +1,18 @@
+# 生产依赖与产物
+node_modules/
+dist/
+out/
+
+# 本地开发隔离的 dsh 配置（含真实 API key！严禁提交）
+.dev-dsh/
+.scratch-test/
+run-*.ps1
+
+# 日志与系统
+*.log
+*.bak
+.DS_Store
+Thumbs.db
+
+# 会话恢复
+*.zstd
