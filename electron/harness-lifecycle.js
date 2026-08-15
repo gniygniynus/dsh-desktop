@@ -42,8 +42,10 @@ export async function startHarness(profile = "web") {
     const environment = await loadLayeredEnv("dsh");
     const runProfile = await getRunProfile();
 
-    // 允许 DSH_DESKTOP_PORT 覆盖默认 3080
-    const portArg = process.env.DSH_DESKTOP_PORT ? ["--port", String(process.env.DSH_DESKTOP_PORT)] : [];
+    // 端口：默认 --port 0 = 让 OS 分配空闲端口（dsh 官方支持，见 dsh-web-app/startup 的
+    // "--port <port> | pass 0 to let the OS pick a free one"），避免与已跑的全局 dsh web(3080) 撞车。
+    // 显式设 DSH_DESKTOP_PORT 可固定端口（便于转发/外部访问）。
+    const portArg = process.env.DSH_DESKTOP_PORT ? ["--port", String(Number(process.env.DSH_DESKTOP_PORT))] : ["--port", "0"];
     const { ctx, shutdown } = await runProfile({ environment, profile, patchFiles: [], args: [...portArg] });
     state.ctx = ctx;
     state.shutdown = shutdown;
