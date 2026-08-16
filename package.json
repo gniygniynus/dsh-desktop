@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "test:boot": "node scripts/test-boot.mjs",
-    "dist": "electron-builder --win nsis"
+    "dist": "node scripts/prepack.mjs && electron-builder --win nsis"
   },
   "dependencies": {
     "@deepseek-ai/dsh": "^0.1.0-rc.6"
@@ -17,6 +17,7 @@
     "appId": "com.dsh.desktop",
     "productName": "dsh-desktop",
     "npmRebuild": false,
+    "asar": false,
     "directories": {
       "output": "dist"
     },
@@ -29,7 +30,8 @@
       "node_modules/**"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { appendFileSync, statSync, renameSync, rmSync } from "node:fs";
 import { applyUaPatch } from "../patches/apply.js";
 import { startHarness, harnessPort } from "./harness-lifecycle.js";
+import { ensureInstalled } from "./ensure-installed.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 let win;
@@ -74,6 +75,13 @@ async function createWindow(port) {
 
 app.whenReady().then(async () => {
   try {
+    // 首跑自装 host 插件 + cordis.patch.yml（幂等，失败不阻断启动，下次启动可重试）
+    try {
+      const r = ensureInstalled(join(__dirname, ".."), app.getVersion());
+      log("[install] 自装 " + (r.changed ? "完成（插件已就位）" : r.missing ? "跳过（插件源码未打包）" : "已是最新"));
+    } catch (e) {
+      log("[install] 自装失败（忽略，继续启动）: " + (e.message || String(e)));
+    }
     // 清 webview 缓存：dsh-client-modules 的 /plugins bundle 会被磁盘缓存，导致 client 补丁不生效
     await session.defaultSession.clearCache();
     log("[app] webview 缓存已清");
