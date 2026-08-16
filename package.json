@@ -11,7 +11,8 @@
     "dist": "node scripts/prepack.mjs && electron-builder --win nsis"
   },
   "dependencies": {
-    "@deepseek-ai/dsh": "^0.1.0-rc.6"
+    "@deepseek-ai/dsh": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-settings-models": "^0.1.0-rc.6"
   },
   "build": {
     "appId": "com.dsh.desktop",
