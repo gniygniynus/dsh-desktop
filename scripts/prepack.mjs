@@ -2,7 +2,7 @@
 // 1. 4 个 client 编译产物补丁（打进 node_modules，运行时只读改不了）
 // 2. 禁用 profile-boot 里的 HMR——cordis-plugin-hmr 需要 --expose-internals，打包后 Electron 不提供该 flag，
 //    会导致启动 fatal；HMR 只是热重载，生产打包不需要。
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync, cpSync, rmSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyApiRemotesPatch, applyWorkspaceDeletePatch, applyConversationRewindPatch, applySettingsModelsPatch } from "../patches/apply-session-rewind.js";
@@ -32,6 +32,19 @@ function applyHmrPatch() {
   return { target, changed: true };
 }
 
+// 把 host 插件同步到项目 node_modules，打包后随 app 进入安装目录的 node_modules。
+// 这样 cordis-plugin-loader 能从它自己的位置 parent-walk 解析到插件（放 ~/.dsh/profiles/node_modules 不行）。
+function applyPluginSync() {
+  const src = join(APP, "plugins", "dsh-session-rewind");
+  const dest = join(APP, "node_modules", "@deepseek-ai", "dsh-session-rewind");
+  mkdirSync(dirname(dest), { recursive: true });
+  rmSync(dest, { recursive: true, force: true });
+  mkdirSync(dest, { recursive: true });
+  cpSync(join(src, "package.json"), join(dest, "package.json"));
+  cpSync(join(src, "lib"), join(dest, "lib"), { recursive: true });
+  return { changed: true };
+}
+
 let failed = false;
 for (const [label, apply] of [
   ["api-remotes", applyApiRemotesPatch],
@@ -45,6 +58,7 @@ for (const [label, apply] of [
   ["client-connection-cred", applyClientConnection],
   ["directory-picker", applyDirectoryPicker],
   ["model-editor", applyModelEditor],
+  ["plugin-sync", applyPluginSync],
 ]) {
   try {
     const r = apply();
