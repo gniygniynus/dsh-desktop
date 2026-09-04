@@ -41,9 +41,9 @@ function patchFile(target, replacements, label) {
   let changed = false;
   for (const entry of replacements) {
     const [from, to, global = false] = entry;
+    // 「to」已存在 → 该处已 patch（无论有无 MARK），跳过
+    if (src.includes(to)) continue;
     if (!src.includes(from)) {
-      // 锚点缺失：可能已被手动补丁（from 已被替换成 to）—— 若 to 已存在则视为已 patch，跳过
-      if (src.includes(to)) continue;
       throw new Error(`[session-rewind] ${label} 未找到锚点，无法打补丁（版本可能已变动）。锚点片段：${from.slice(0, 80)}`);
     }
     src = global ? src.split(from).join(to) : src.replace(from, to);
