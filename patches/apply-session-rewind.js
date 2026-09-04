@@ -122,7 +122,7 @@ function applyWorkspaceDeletePatch() {
 
     // browserInjected 加 deleteSession（访问 ctx.remote）
     ["archiveSession: async (sessionId) => {\n\t\t\t\t\tawait ctx.workspaces.archiveSession(sessionId);\n\t\t\t\t},",
-     "archiveSession: async (sessionId) => {\n\t\t\t\t\tawait ctx.workspaces.archiveSession(sessionId);\n\t\t\t\t},\n\t\t\t\tdeleteSession: (sessionId) => {\n\t\t\t\t\treturn ctx.remote.sessionRewind.delete({ sessionId }).then((r) => {\n\t\t\t\t\t\tif (r.ok && r.value && r.value.ok) { ctx.sessions.refresh().catch(() => {}); }\n\t\t\t\t\t\telse { const code = r?.value?.error?.code ?? r?.error?.code ?? 'unknown'; alert('删除会话失败：' + code); }\n\t\t\t\t\t}).catch((e) => {\n\t\t\t\t\t\talert('删除会话出错：' + String(e));\n\t\t\t\t\t});\n\t\t\t\t},"],
+     "archiveSession: async (sessionId) => {\n\t\t\t\t\tawait ctx.workspaces.archiveSession(sessionId);\n\t\t\t\t},\n\t\t\t\tdeleteSession: (sessionId) => {\n\t\t\t\t\tif (!confirm('确定要永久删除此会话？此操作无法撤销。')) return Promise.resolve();\n\t\t\t\t\treturn ctx.remote.sessionRewind.delete({ sessionId }).then((r) => {\n\t\t\t\t\t\tif (r.ok && r.value && r.value.ok) { ctx.sessions.refresh().catch(() => {}); }\n\t\t\t\t\t\telse { const code = r?.value?.error?.code ?? r?.error?.code ?? 'unknown'; alert('删除会话失败：' + code); }\n\t\t\t\t\t}).catch((e) => {\n\t\t\t\t\t\talert('删除会话出错：' + String(e));\n\t\t\t\t\t});\n\t\t\t\t},"],
 
     // WorkspaceBrowser 签名加 deleteSession
     ["archiveSession, insertSessionBefore, createWorkspace",
