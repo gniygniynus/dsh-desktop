@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 
 const dshHome = () => process.env.DSH_HOME || join(homedir(), ".dsh");
 
-export function ensureInstalled(_appRoot, _version) {
+export function ensureInstalled() {
   const homePatch = join(dshHome(), "cordis.patch.yml");
   const entry = "- insert:\n    - id: session-rewind\n      name: '@deepseek-ai/dsh-session-rewind'";
   let changed = false;

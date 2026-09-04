@@ -10,6 +10,9 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { applyApiRemotesPatch, applyWorkspaceDeletePatch, applyConversationRewindPatch, applySettingsModelsPatch } from "../patches/apply-session-rewind.js";
+import { applyCredentialsLocal, applyApiproxy, applySettingsModels, applyClientConnection } from "../patches/apply-provider-editor.js";
+import { applyDirectoryPicker } from "../patches/apply-directory-picker.js";
+import { applyModelEditor } from "./patch-model-editor.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const APP = join(__dirname, "..");
@@ -48,9 +51,19 @@ cpSync(join(SRC, "package.json"), join(DEST, "package.json"));
 cpSync(join(SRC, "lib"), join(DEST, "lib"), { recursive: true });
 console.log("[install] 插件已复制 →", DEST);
 
-// 2. 应用 client 补丁
+// 2. 应用所有 client 补丁（session-rewind + provider-editor + directory-picker + model-editor）
 let patchFailed = false;
-for (const apply of [applyApiRemotesPatch, applyWorkspaceDeletePatch, applyConversationRewindPatch, applySettingsModelsPatch]) {
+const allPatches = [
+  // session-rewind 核心（删除/撤回/重新回答/粘贴识别）
+  applyApiRemotesPatch, applyWorkspaceDeletePatch, applyConversationRewindPatch, applySettingsModelsPatch,
+  // provider-editor（key 回显/眼睛按钮/解锁覆盖 env key）
+  applyCredentialsLocal, applyApiproxy, applySettingsModels, applyClientConnection,
+  // directory-picker（Electron 环境用原生对话框）
+  applyDirectoryPicker,
+  // model-editor（1M 上下文 + 思考等级勾选）
+  applyModelEditor,
+];
+for (const apply of allPatches) {
   try {
     const r = apply();
     console.log(`[install] ${r.label}: ${r.changed ? "已打补丁" : "已是最新（跳过）"}`);

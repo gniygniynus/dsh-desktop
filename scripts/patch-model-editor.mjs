@@ -1,11 +1,29 @@
 // 模型高级设置改造（幂等）：把 contextWindow/maxTokens 两个输入框换成「1M 上下文」+「思考等级」两个勾选。
 // 思考等级勾选 → reasoningEfforts: { off: "", high: "high", max: "max" }；1M 勾选 → contextWindow: 1000000；输出(maxTokens)跟随官方、不再暴露。
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const APP = join(__dirname, "..");
+
+function resolveModelEditorTarget() {
+  const relPath = "dsh-client-ui-settings-models/lib/client.js";
+  const candidates = [];
+  const homes = [homedir(), process.env.USERPROFILE];
+  for (const home of homes) {
+    if (!home) continue;
+    try {
+      const dshNm = realpathSync(join(home, ".dsh", "node_modules"));
+      candidates.push(join(dshNm, "@deepseek-ai", relPath));
+    } catch {}
+  }
+  candidates.push(join(APP, "node_modules", "@deepseek-ai", relPath));
+  candidates.push(join(APP, "node_modules", "@deepseek-ai", "dsh", "node_modules", "@deepseek-ai", relPath));
+  for (const p of candidates) if (existsSync(p)) return p;
+  throw new Error(`[model-editor] 找不到 ${relPath}`);
+}
 const T7 = "\t\t\t\t\t\t\t";
 const T8 = "\t\t\t\t\t\t\t\t";
 const T9 = "\t\t\t\t\t\t\t\t\t";
@@ -76,10 +94,10 @@ const to = [
 ].join("\n");
 
 export function applyModelEditor() {
-  const target = join(APP, "node_modules/@deepseek-ai/dsh-client-ui-settings-models/lib/client.js");
+  const target = resolveModelEditorTarget();
   const src = readFileSync(target, "utf8");
-  if (src.includes(to)) return { target, changed: false };
-  if (!src.includes(from)) return { target, changed: false }; // 版本变动或已手动改过，静默跳过
+  if (src.includes(to)) return { target, label: "model-editor", changed: false };
+  if (!src.includes(from)) return { target, label: "model-editor", changed: false }; // 版本变动或已手动改过，静默跳过
   writeFileSync(target, src.replace(from, to), "utf8");
-  return { target, changed: true };
+  return { target, label: "model-editor", changed: true };
 }

@@ -2,15 +2,35 @@
 // harness 的 Windows 目录选择器用 koffi 起子进程弹 COM 对话框，子进程靠 process.execPath（node.exe）启动；
 // 在 Electron 壳里 process.execPath 是 dsh-desktop.exe，子进程起不来 → 对话框弹不出。
 // 这里在 Electron 环境改用 Electron 原生 dialog.showOpenDialog（主进程内可用）。
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const APP = join(__dirname, "..");
 
+function resolvePickerTarget() {
+  const relPath = "dsh-host-directory-picker-native/lib/index.js";
+  const candidates = [];
+  // 全局 harness node_modules（Electron 加载路径）
+  const homes = [homedir(), process.env.USERPROFILE];
+  for (const home of homes) {
+    if (!home) continue;
+    try {
+      const dshNm = realpathSync(join(home, ".dsh", "node_modules"));
+      candidates.push(join(dshNm, "@deepseek-ai", relPath));
+    } catch {}
+  }
+  // 项目 node_modules（fallback）
+  candidates.push(join(APP, "node_modules", "@deepseek-ai", relPath));
+  candidates.push(join(APP, "node_modules", "@deepseek-ai", "dsh", "node_modules", "@deepseek-ai", relPath));
+  for (const p of candidates) if (existsSync(p)) return p;
+  throw new Error(`[directory-picker] 找不到 ${relPath}`);
+}
+
 function applyDirectoryPicker() {
-  const target = join(APP, "node_modules/@deepseek-ai/dsh-host-directory-picker-native/lib/index.js");
+  const target = resolvePickerTarget();
   const src = readFileSync(target, "utf8");
   const from = '\tif (platform === "win32") return await (internals.pickWin32Dialog ?? pickWin32Directory)(signal);';
   const to = '\tif (platform === "win32") {\n' +
@@ -23,10 +43,10 @@ function applyDirectoryPicker() {
     '\t\t}\n' +
     '\t\treturn await (internals.pickWin32Dialog ?? pickWin32Directory)(signal);\n' +
     '\t}';
-  if (src.includes(to)) return { target, changed: false };
+  if (src.includes(to)) return { target, label: "directory-picker", changed: false };
   if (!src.includes(from)) throw new Error("[directory-picker] 锚点缺失");
   writeFileSync(target, src.replace(from, to), "utf8");
-  return { target, changed: true };
+  return { target, label: "directory-picker", changed: true };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

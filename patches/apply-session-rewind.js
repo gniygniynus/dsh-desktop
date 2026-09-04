@@ -258,22 +258,24 @@ function applyConversationRewindPatch() {
 function applySettingsModelsPatch() {
   const target = resolveTarget(join("dsh-client-ui-settings-models", "lib", "client.js"));
 
-  const pasteFuncs = `function parseProviderPaste(text) {
-  const s = String(text ?? "").trim();
+  const pasteFuncs = `var ROUTE_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+function parseProviderPaste(text) {
+  var s = String(text ?? "").trim();
   if (!s) return { ok: false, reason: "empty" };
-  let obj;
+  var obj;
   try { obj = JSON.parse(s); } catch { return { ok: false, reason: "not-json" }; }
   if (obj && typeof obj === "object" && !Array.isArray(obj) && obj._type === "newapi_channel_conn") {
-    const url = typeof obj.url === "string" ? obj.url.trim() : "";
-    const key = typeof obj.key === "string" ? obj.key.trim() : "";
+    var url = typeof obj.url === "string" ? obj.url.trim() : "";
+    var key = typeof obj.key === "string" ? obj.key.trim() : "";
     if (!url) return { ok: false, reason: "no-url" };
     if (!key) return { ok: false, reason: "no-key" };
-    let baseURL = url.replace(/\\/+$/, "");
+    var baseURL = url.replace(/\\/+$/, "");
     if (!/\\/v\\d+$/.test(baseURL)) baseURL += "/v1";
-    let host = "";
+    var host = "";
     try { host = new URL(url).host; } catch {}
-    const route = host.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
-    return { ok: true, route: route || "newapi", displayName: host || "NewAPI", baseURL, protocol: "openai-completions", apiKey: key };
+    var route = host.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
+    if (!route || !ROUTE_PATTERN.test(route)) route = "newapi";
+    return { ok: true, route: route, displayName: host || "NewAPI", baseURL: baseURL, protocol: "openai-completions", apiKey: key };
   }
   return { ok: false, reason: "unknown-type" };
 }

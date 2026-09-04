@@ -77,7 +77,7 @@ app.whenReady().then(async () => {
   try {
     // 首跑自装 host 插件 + cordis.patch.yml（幂等，失败不阻断启动，下次启动可重试）
     try {
-      const r = ensureInstalled(join(__dirname, ".."), app.getVersion());
+      const r = ensureInstalled();
       log("[install] 自装 " + (r.changed ? "完成（插件已就位）" : r.missing ? "跳过（插件源码未打包）" : "已是最新"));
     } catch (e) {
       log("[install] 自装失败（忽略，继续启动）: " + (e.message || String(e)));
