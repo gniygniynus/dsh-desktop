@@ -15,7 +15,7 @@ export function ensureInstalled(_appRoot, _version) {
   if (existsSync(homePatch)) {
     const content = readFileSync(homePatch, "utf8");
     const trimmed = content.trim();
-    if (trimmed === "[]" || trimmed === "") {
+    if (/^\[[\s]*\]$/.test(trimmed) || trimmed === "") {
       writeFileSync(homePatch, entry + "\n", "utf8");
       changed = true;
     } else if (!content.includes("session-rewind")) {

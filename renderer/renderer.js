@@ -1,5 +1,9 @@
 // 渲染层：全窗口承载原版 harness web UI
 const bridge = window.dshDesktop;
+if (!bridge) {
+  console.error("[renderer] window.dshDesktop 未挂载，preload 可能未正常加载");
+  throw new Error("dshDesktop bridge missing");
+}
 const webview = document.querySelector("#harness");
 let currentPort = Number(new URLSearchParams(location.search).get("port") || 0);
 

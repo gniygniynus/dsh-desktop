@@ -54,11 +54,9 @@ export function applyUaPatch() {
   if (!src.includes(ORIGINAL)) {
     throw new Error("[ua-patch] 未找到原始 requestHeaders 代码块，无法自动打补丁（版本可能已变动）。请人工核对。target=" + target);
   }
-  if (!src.startsWith(MARK + "\n")) {
-    writeFileSync(target, MARK + "\n" + src, "utf8");
-  }
-  const next = readFileSync(target, "utf8").replace(ORIGINAL, PATCHED);
-  writeFileSync(target, next, "utf8");
+  // 先完成所有替换，再一次性原子写文件（避免中途崩溃导致半打补丁）
+  const next = src.replace(ORIGINAL, PATCHED);
+  writeFileSync(target, MARK + "\n" + next, "utf8");
   return { target, applied: true, changed: true };
 }
 

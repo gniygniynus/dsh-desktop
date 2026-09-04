@@ -35,20 +35,33 @@ if (!existsSync(join(SRC, "package.json"))) {
   process.exit(1);
 }
 mkdirSync(dirname(DEST), { recursive: true });
-rmSync(DEST, { recursive: true, force: true });
+// 注意：若 Electron app 正在运行，Windows 文件锁可能导致删除/写入失败。
+// 安装前请先退出 dsh-desktop。
+try {
+  rmSync(DEST, { recursive: true, force: true });
+} catch (e) {
+  console.error("[install] 无法删除旧插件（可能有进程正在使用），请先退出 dsh-desktop 再重试：", String(e));
+  process.exit(1);
+}
 mkdirSync(DEST, { recursive: true });
 cpSync(join(SRC, "package.json"), join(DEST, "package.json"));
 cpSync(join(SRC, "lib"), join(DEST, "lib"), { recursive: true });
 console.log("[install] 插件已复制 →", DEST);
 
 // 2. 应用 client 补丁
+let patchFailed = false;
 for (const apply of [applyApiRemotesPatch, applyWorkspaceDeletePatch, applyConversationRewindPatch, applySettingsModelsPatch]) {
   try {
     const r = apply();
     console.log(`[install] ${r.label}: ${r.changed ? "已打补丁" : "已是最新（跳过）"}`);
   } catch (e) {
+    patchFailed = true;
     console.error("[install] " + e.message);
   }
+}
+if (patchFailed) {
+  console.error("[install] 部分补丁失败，安装未完成。");
+  process.exit(1);
 }
 
 // 3. 创建/追加 ~/.dsh/cordis.patch.yml（home 级 patch，注入 host 插件）
@@ -58,7 +71,7 @@ if (existsSync(homePatch)) {
   const content = readFileSync(homePatch, "utf8");
   const trimmed = content.trim();
   // 空数组 `[]` 或空文件：直接覆盖成 entry（否则追加会造成两个顶层 YAML 数组，非法）
-  if (trimmed === "[]" || trimmed === "") {
+  if (/^\[[\s]*\]$/.test(trimmed) || trimmed === "") {
     writeFileSync(homePatch, entry + "\n", "utf8");
     console.log("[install] 已写入", homePatch);
   } else if (content.includes("session-rewind")) {

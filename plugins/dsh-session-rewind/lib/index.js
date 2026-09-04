@@ -83,7 +83,10 @@ class SessionRewindService extends TypertRemoteService {
       snaps = [];
     }
     for (const id of deletedIds) {
-      const ws = this.ctx.workspaceRegistry.list().find((w) => w.sessionIds.includes(id));
+      let ws;
+      try {
+        ws = this.ctx.workspaceRegistry.list().find((w) => w.sessionIds.includes(id));
+      } catch {}
       if (ws !== void 0) await ws.detachSession(id);
     }
     for (const id of deletedIds) {
@@ -137,7 +140,7 @@ class SessionRewindService extends TypertRemoteService {
       // 撤回第一条消息（无上一轮）＝ 去掉该消息及之后 ＝ 创建空会话（清空重来）＋ 删母
       try {
         const apiProxy = this.ctx.get("apiProxy");
-        const created = await apiProxy.sessions.create({ payload: { cwd: header.cwd } });
+        const created = await apiProxy.sessions.create({ payload: { cwd: header.cwd ?? "" } });
         if (!created.result.ok) {
           return rejected({ code: "fork-failed", sessionId, message: created.result.error?.message ?? "create failed" });
         }
@@ -196,13 +199,20 @@ class SessionRewindService extends TypertRemoteService {
       // 重新回答第一轮的 AI 回复：建空会话 + followup 用户消息重跑 + 删母
       try {
         const apiProxy = this.ctx.get("apiProxy");
-        const created = await apiProxy.sessions.create({ payload: { cwd: header.cwd } });
+        const created = await apiProxy.sessions.create({ payload: { cwd: header.cwd ?? "" } });
         if (!created.result.ok) return rejected({ code: "fork-failed", sessionId, message: created.result.error?.message ?? "create failed" });
         const newId = created.result.value.sessionId;
+        // apiProxy.sessions.create 只建会话记录，不建 agent。
+        // 用 followup IPC 让 host 在该会话下触发 agent 并重跑用户消息。
         try {
-          const agent = this.ctx.agents?.get(newId);
-          if (agent?.followup !== void 0) agent.followup(userMsg);
-        } catch {}
+          await apiProxy.sessions.followup({ payload: { sessionId: newId, message: userMsg } });
+        } catch {
+          // followup IPC 不存在时退回本地 agents.get（仅在测试 boot 时可能成功）
+          try {
+            const agent = this.ctx.agents?.get(newId);
+            if (agent?.followup !== void 0) agent.followup(userMsg);
+          } catch {}
+        }
         await this._hardDelete(sessionId).catch(() => {});
         return success({ sessionId: newId });
       } catch (error) {
@@ -224,11 +234,18 @@ class SessionRewindService extends TypertRemoteService {
     }
 
     // followup 原用户消息重跑（fork 出的子会话已带 agent）
+    // apiProxy.sessions.fork 内部创建了 agent，但 ctx.agents.get 可能有时序差，
+    // 优先走 followup IPC（host 侧保证时序），不存在再回退到 agents.get。
     try {
-      const agent = this.ctx.agents?.get(childId);
-      if (agent?.followup !== void 0) agent.followup(userMsg);
-    } catch (error) {
-      // followup 失败不影响（子会话已建立）
+      const apiProxy = this.ctx.get("apiProxy");
+      await apiProxy.sessions.followup({ payload: { sessionId: childId, message: userMsg } });
+    } catch {
+      try {
+        const agent = this.ctx.agents?.get(childId);
+        if (agent?.followup !== void 0) agent.followup(userMsg);
+      } catch (error) {
+        // followup 失败不影响（子会话已建立）
+      }
     }
 
     try {
