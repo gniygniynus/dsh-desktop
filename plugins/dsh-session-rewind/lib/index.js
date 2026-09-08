@@ -57,16 +57,11 @@ class SessionRewindService extends TypertRemoteService {
     renameSync(dir, join(trashRoot, `del-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`));
   }
 
-  /** 从 live SessionStore 移除一个会话（文件已删，session.list 不应再返回它）。
-   *  detachEntered 标记 private，但 JS 运行时可用；hack 内部，harness 升级可能碎。 */
-  _detachLive(sessionId) {
+  /** 归档母会话（从列表消失但不删文件，可靠且不需 hack 私有 API）。 */
+  async _archiveMother(sessionId) {
     try {
-      const store = this.ctx.sessions?.store;
-      if (store === void 0 || typeof store.get !== "function") return;
-      const entry = store.get(sessionId);
-      if (entry !== void 0 && typeof this.ctx.sessions.detachEntered === "function") {
-        this.ctx.sessions.detachEntered(entry);
-      }
+      const ws = this.ctx.workspaceRegistry.list().find((w) => w.sessionIds.includes(sessionId));
+      if (ws !== void 0) await ws.archiveSession(sessionId);
     } catch {}
   }
 
@@ -137,7 +132,7 @@ class SessionRewindService extends TypertRemoteService {
     const events = await this._readEvents(sessionId);
     const prevEndSeq = this._computePrevEndSeq(events, atSeq);
     if (prevEndSeq === undefined) {
-      // 撤回第一条消息（无上一轮）＝ 去掉该消息及之后 ＝ 创建空会话（清空重来）＋ 删母
+      // 撤回第一条消息（无上一轮）＝ 去掉该消息及之后 ＝ 创建空会话（清空重来）＋ 归档母
       try {
         const apiProxy = this.ctx.get("apiProxy");
         const created = await apiProxy.sessions.create({ payload: { cwd: header.cwd ?? "" } });
@@ -145,7 +140,7 @@ class SessionRewindService extends TypertRemoteService {
           return rejected({ code: "fork-failed", sessionId, message: created.result.error?.message ?? "create failed" });
         }
         const newId = created.result.value.sessionId;
-        await this._hardDelete(sessionId).catch(() => {});
+        await this._archiveMother(sessionId);
         return success({ sessionId: newId });
       } catch (error) {
         return rejected({ code: "fork-failed", sessionId, message: String(error) });
@@ -165,11 +160,8 @@ class SessionRewindService extends TypertRemoteService {
       return rejected({ code: "fork-failed", sessionId, message: String(error) });
     }
 
-    try {
-      await this._hardDelete(sessionId);
-    } catch (error) {
-      // 母会话删失败不影响撤回结果（子会话已 fork 成功）
-    }
+    // 归档母会话（从列表消失，比硬删可靠——不受文件锁/live store 影响）
+    await this._archiveMother(sessionId);
 
     return success({ sessionId: childId });
   }
@@ -213,7 +205,7 @@ class SessionRewindService extends TypertRemoteService {
             if (agent?.followup !== void 0) agent.followup(userMsg);
           } catch {}
         }
-        await this._hardDelete(sessionId).catch(() => {});
+        await this._archiveMother(sessionId);
         return success({ sessionId: newId });
       } catch (error) {
         return rejected({ code: "fork-failed", sessionId, message: String(error) });
@@ -248,11 +240,8 @@ class SessionRewindService extends TypertRemoteService {
       }
     }
 
-    try {
-      await this._hardDelete(sessionId);
-    } catch (error) {
-      // 母会话删失败不影响
-    }
+    // 归档母会话
+    await this._archiveMother(sessionId);
 
     return success({ sessionId: childId });
   }
