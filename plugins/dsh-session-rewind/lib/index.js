@@ -1,4 +1,5 @@
-// sessionRewind host 服务：硬删会话（delete）+ 撤回（rewind=fork+删母+子顶替）。
+// sessionRewind host 服务：硬删会话（delete）+ 撤回（rewind=fork+归档母）+ 重新回答（regenerate=fork+followup+归档母）。
+// 适配 dsh 0.1.5-rc.1：去掉 apiProxy 依赖，直接用 sessions.fork/create。
 import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Remote, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
@@ -30,7 +31,8 @@ function markRemoteMethod(ServiceClass, methodName) {
 }
 
 class SessionRewindService extends TypertRemoteService {
-  static inject = ["sessionPersistence", "workspaceRegistry", "sessions", "apiProxy", "agents"];
+  // 0.1.5: apiProxy 已移除，直接用 sessions（SessionStore）+ workspaceRegistry + agents
+  static inject = ["sessionPersistence", "workspaceRegistry", "sessions", "agents"];
 
   constructor(ctx) {
     super(ctx, "sessionRewind");
@@ -132,14 +134,12 @@ class SessionRewindService extends TypertRemoteService {
     const events = await this._readEvents(sessionId);
     const prevEndSeq = this._computePrevEndSeq(events, atSeq);
     if (prevEndSeq === undefined) {
-      // 撤回第一条消息（无上一轮）＝ 去掉该消息及之后 ＝ 创建空会话（清空重来）＋ 归档母
+      // 撤回第一条消息（无上一轮）＝ 创建空会话＋归档母
       try {
-        const apiProxy = this.ctx.get("apiProxy");
-        const created = await apiProxy.sessions.create({ payload: { cwd: header.cwd ?? "" } });
-        if (!created.result.ok) {
-          return rejected({ code: "fork-failed", sessionId, message: created.result.error?.message ?? "create failed" });
-        }
-        const newId = created.result.value.sessionId;
+        const child = this.ctx.sessions.create(undefined, {
+          meta: { cwd: header.cwd ?? "" }
+        });
+        const newId = child.id;
         await this._archiveMother(sessionId);
         return success({ sessionId: newId });
       } catch (error) {
@@ -149,18 +149,13 @@ class SessionRewindService extends TypertRemoteService {
 
     let childId;
     try {
-      const apiProxy = this.ctx.get("apiProxy");
-      const forkResult = await apiProxy.sessions.fork({ payload: { sessionId, atSeq: prevEndSeq } });
-      if (!forkResult.result.ok) {
-        const msg = forkResult.result.error?.message ?? forkResult.result.error?.code ?? "fork failed";
-        return rejected({ code: "fork-failed", sessionId, message: String(msg) });
-      }
-      childId = forkResult.result.value.sessionId;
+      const child = this.ctx.sessions.fork(sessionId, prevEndSeq);
+      childId = child.id;
     } catch (error) {
       return rejected({ code: "fork-failed", sessionId, message: String(error) });
     }
 
-    // 归档母会话（从列表消失，比硬删可靠——不受文件锁/live store 影响）
+    // 归档母会话
     await this._archiveMother(sessionId);
 
     return success({ sessionId: childId });
@@ -177,7 +172,7 @@ class SessionRewindService extends TypertRemoteService {
     return undefined;
   }
 
-  /** 重新回答：fork 到 atSeq 所在轮次的上一轮，followup 原用户消息重跑，删母，返回子会话 id。 */
+  /** 重新回答：fork 到 atSeq 所在轮次的上一轮，followup 原用户消息重跑，归档母，返回子会话 id。 */
   async regenerate(request) {
     const { sessionId, atSeq } = request;
     const header = await this._resolveHeader(sessionId);
@@ -188,23 +183,16 @@ class SessionRewindService extends TypertRemoteService {
     if (userMsg === void 0) return rejected({ code: "no-user-message", sessionId });
     const prevEndSeq = this._computePrevEndSeq(events, atSeq);
     if (prevEndSeq === undefined) {
-      // 重新回答第一轮的 AI 回复：建空会话 + followup 用户消息重跑 + 删母
+      // 重新回答第一轮的 AI 回复：建空会话 + followup 用户消息重跑 + 归档母
       try {
-        const apiProxy = this.ctx.get("apiProxy");
-        const created = await apiProxy.sessions.create({ payload: { cwd: header.cwd ?? "" } });
-        if (!created.result.ok) return rejected({ code: "fork-failed", sessionId, message: created.result.error?.message ?? "create failed" });
-        const newId = created.result.value.sessionId;
-        // apiProxy.sessions.create 只建会话记录，不建 agent。
-        // 用 followup IPC 让 host 在该会话下触发 agent 并重跑用户消息。
+        const child = this.ctx.sessions.create(undefined, {
+          meta: { cwd: header.cwd ?? "" }
+        });
+        const newId = child.id;
         try {
-          await apiProxy.sessions.followup({ payload: { sessionId: newId, message: userMsg } });
-        } catch {
-          // followup IPC 不存在时退回本地 agents.get（仅在测试 boot 时可能成功）
-          try {
-            const agent = this.ctx.agents?.get(newId);
-            if (agent?.followup !== void 0) agent.followup(userMsg);
-          } catch {}
-        }
+          const agent = this.ctx.agents?.get(newId);
+          if (agent?.followup !== void 0) agent.followup(userMsg);
+        } catch {}
         await this._archiveMother(sessionId);
         return success({ sessionId: newId });
       } catch (error) {
@@ -214,31 +202,17 @@ class SessionRewindService extends TypertRemoteService {
 
     let childId;
     try {
-      const apiProxy = this.ctx.get("apiProxy");
-      const forkResult = await apiProxy.sessions.fork({ payload: { sessionId, atSeq: prevEndSeq } });
-      if (!forkResult.result.ok) {
-        const msg = forkResult.result.error?.message ?? forkResult.result.error?.code ?? "fork failed";
-        return rejected({ code: "fork-failed", sessionId, message: String(msg) });
-      }
-      childId = forkResult.result.value.sessionId;
+      const child = this.ctx.sessions.fork(sessionId, prevEndSeq);
+      childId = child.id;
     } catch (error) {
       return rejected({ code: "fork-failed", sessionId, message: String(error) });
     }
 
-    // followup 原用户消息重跑（fork 出的子会话已带 agent）
-    // apiProxy.sessions.fork 内部创建了 agent，但 ctx.agents.get 可能有时序差，
-    // 优先走 followup IPC（host 侧保证时序），不存在再回退到 agents.get。
+    // followup 原用户消息重跑
     try {
-      const apiProxy = this.ctx.get("apiProxy");
-      await apiProxy.sessions.followup({ payload: { sessionId: childId, message: userMsg } });
-    } catch {
-      try {
-        const agent = this.ctx.agents?.get(childId);
-        if (agent?.followup !== void 0) agent.followup(userMsg);
-      } catch (error) {
-        // followup 失败不影响（子会话已建立）
-      }
-    }
+      const agent = this.ctx.agents?.get(childId);
+      if (agent?.followup !== void 0) agent.followup(userMsg);
+    } catch {}
 
     // 归档母会话
     await this._archiveMother(sessionId);
