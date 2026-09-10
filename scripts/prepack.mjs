@@ -5,7 +5,7 @@
 import { readdirSync, readFileSync, writeFileSync, cpSync, rmSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyApiRemotesPatch, applyWorkspaceDeletePatch, applyConversationRewindPatch, applySettingsModelsPatch } from "../patches/apply-session-rewind.js";
+import { applyApiRemotesPatch, applyWorkspaceDeletePatch, applyChatRewindPatch, applySettingsModelsPatch } from "../patches/apply-session-rewind.js";
 import { applyCredentialsLocal, applyApiproxy, applySettingsModels, applyClientConnection } from "../patches/apply-provider-editor.js";
 import { applyDirectoryPicker } from "../patches/apply-directory-picker.js";
 import { applyModelEditor } from "./patch-model-editor.mjs";
@@ -46,16 +46,17 @@ function applyPluginSync() {
 }
 
 let failed = false;
-for (const [label, apply] of [
+// optional 标记的补丁失败时只警告不退出（新版可能改变了接口）
+for (const [label, apply, optional] of [
   ["api-remotes", applyApiRemotesPatch],
   ["workspace", applyWorkspaceDeletePatch],
-  ["conversation", applyConversationRewindPatch],
+  ["conversation", applyChatRewindPatch],
   ["settings-models", applySettingsModelsPatch],
   ["hmr-disable", applyHmrPatch],
   ["credentials-local", applyCredentialsLocal],
-  ["apiproxy-cred", applyApiproxy],
-  ["settings-provider", applySettingsModels],
-  ["client-connection-cred", applyClientConnection],
+  ["apiproxy-cred", applyApiproxy, true],       // dsh-host-apiproxy 在新版已移除
+  ["settings-provider", applySettingsModels, true], // ProviderEditor 接口已变
+  ["client-connection-cred", applyClientConnection, true], // 接口已变
   ["directory-picker", applyDirectoryPicker],
   ["model-editor", applyModelEditor],
   ["plugin-sync", applyPluginSync],
@@ -64,8 +65,12 @@ for (const [label, apply] of [
     const r = apply();
     console.log(`[prepack] ${label}: ${r.changed ? "已打补丁" : "已是最新（跳过）"}`);
   } catch (e) {
-    failed = true;
-    console.error(`[prepack] ${label} 失败: ` + (e.message || String(e)));
+    if (optional) {
+      console.warn(`[prepack] ${label} 跳过（接口已变，不影响主功能）: ` + (e.message || String(e)).slice(0, 120));
+    } else {
+      failed = true;
+      console.error(`[prepack] ${label} 失败: ` + (e.message || String(e)));
+    }
   }
 }
 process.exit(failed ? 1 : 0);

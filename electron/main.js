@@ -1,11 +1,14 @@
 // Electron 主进程：窗口 + 内嵌 harness + IPC 路由
-import { app, BrowserWindow, ipcMain, dialog, session } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, session, shell } from "electron";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { appendFileSync, statSync, renameSync, rmSync } from "node:fs";
 import { applyUaPatch } from "../patches/apply.js";
 import { startHarness, harnessPort } from "./harness-lifecycle.js";
 import { ensureInstalled } from "./ensure-installed.js";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 let win;
@@ -91,6 +94,8 @@ app.whenReady().then(async () => {
     log("[app] harness 就绪 @ " + port);
     await createWindow(port);
     log("[app] 窗口已创建");
+    // 启动后 5 秒检查更新（不阻断启动）
+    setTimeout(() => checkForUpdates(), 5000);
   } catch (e) {
     log("[fatal] 启动失败 ========================================");
     for (const line of flattenError(e)) log(line);
@@ -106,3 +111,60 @@ ipcMain.handle("app:get-port", () => harnessPort());
 ipcMain.on("renderer:log", (_e, msg) => log("[renderer] " + msg));
 
 app.on("window-all-closed", () => app.quit());
+
+// ---- 自动更新检测（启动后 5 秒，静默检查 GitHub Releases）----
+const CURRENT_VERSION = app.getVersion();
+const GITHUB_RELEASES_API = "https://api.github.com/repos/gniygniynus/dsh-desktop/releases/latest";
+
+function checkForUpdates() {
+  const https = require("node:https");
+  const req = https.get(
+    GITHUB_RELEASES_API,
+    { headers: { "User-Agent": "dsh-desktop/" + CURRENT_VERSION } },
+    (res) => {
+      let data = "";
+      res.on("data", (chunk) => { data += chunk; });
+      res.on("end", () => {
+        try {
+          const release = JSON.parse(data);
+          const latestTag = release.tag_name?.replace(/^v/, "") ?? "";
+          if (latestTag && latestTag !== CURRENT_VERSION && compareVersions(latestTag, CURRENT_VERSION) > 0) {
+            log(`[updater] 发现新版本 ${latestTag}（当前 ${CURRENT_VERSION}），提示用户`);
+            if (win && !win.isDestroyed()) {
+              dialog.showMessageBox(win, {
+                type: "info",
+                title: "发现新版本",
+                message: `dsh-desktop ${latestTag} 已发布`,
+                detail: `当前版本：${CURRENT_VERSION}\n\n${release.body?.slice(0, 400) ?? ""}`,
+                buttons: ["前往下载", "稍后再说"],
+                defaultId: 0,
+                cancelId: 1,
+              }).then(({ response }) => {
+                if (response === 0) {
+                  const downloadUrl = release.html_url ?? "https://github.com/gniygniynus/dsh-desktop/releases";
+                  shell.openExternal(downloadUrl);
+                }
+              });
+            }
+          } else {
+            log(`[updater] 已是最新版本（${CURRENT_VERSION}）`);
+          }
+        } catch (e) {
+          log("[updater] 解析响应失败: " + String(e));
+        }
+      });
+    }
+  );
+  req.on("error", (e) => log("[updater] 检查更新失败: " + String(e)));
+  req.setTimeout(10000, () => { req.destroy(); log("[updater] 检查更新超时"); });
+}
+
+function compareVersions(a, b) {
+  const pa = a.split(/[.-]/), pb = b.split(/[.-]/);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = parseInt(pa[i] ?? "0", 10), nb = parseInt(pb[i] ?? "0", 10);
+    if (isNaN(na) || isNaN(nb)) continue;
+    if (na !== nb) return na > nb ? 1 : -1;
+  }
+  return 0;
+}

@@ -1,8 +1,8 @@
 # dsh-desktop
 
-DeepSeek Harness 桌面增强：删除会话、撤回消息、重新回答、粘贴识别加供应商。
+DeepSeek Harness 桌面增强：删除会话、撤回消息、重新回答、粘贴识别加供应商、**自动更新检测**。
 
-> 本项目基于官方 **DeepSeek Harness**（`@deepseek-ai/dsh`，MIT License）二次开发，是**非官方**的第三方桌面壳增强，与 DeepSeek 无隶属、赞助或背书关系。详见下方「声明」。
+> 本项目基于官方 **DeepSeek Harness**（`@deepseek-ai/dsh`，MIT License）二次开发，当前适配版本 **0.1.5-rc.1**，是**非官方**的第三方桌面壳增强，与 DeepSeek 无隶属、赞助或背书关系。详见下方「声明」。
 
 ## 功能
 
@@ -12,6 +12,11 @@ DeepSeek Harness 桌面增强：删除会话、撤回消息、重新回答、粘
 | 撤回消息 | 用户消息下「撤回」 | fork 到该消息之前 + 删母 + 自动切到子会话 |
 | 重新回答 | AI 回复下「重新回答」 | fork + followup 原用户消息重跑 + 删母 + 自动切换 |
 | 粘贴识别 | 设置 → 模型 → 添加自定义提供方 →「粘贴识别」 | 解析 NewAPI 通道连接串，自动填字段 + 拉模型 |
+| 自动更新 | 启动后 5 秒 | 检查 GitHub Releases，有新版弹窗提示并提供下载链接 |
+
+## 下载
+
+访问 [Releases](https://github.com/gniygniynus/dsh-desktop/releases) 下载最新版安装包（`.exe`）。
 
 ## 开发安装
 

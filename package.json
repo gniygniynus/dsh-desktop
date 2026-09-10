@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop",
-  "version": "0.1.0",
-  "description": "DeepSeek Harness 桌面版：内嵌 harness，带删除会话 / 对话撤回 / 粘贴加供应商",
+  "version": "0.2.0",
+  "description": "DeepSeek Harness 桌面版：内嵌 harness，带删除会话 / 对话撤回 / 粘贴加供应商 / 自动更新",
   "private": true,
   "type": "module",
   "main": "electron/entry.js",
@@ -12,26 +12,26 @@
   },
   "dependencies": {
     "@deepseek-ai/cordis-plugin-group": "^1.0.1",
-    "@deepseek-ai/dsh": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-anonymous-user-id": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-atomic-write": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-bash-local": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-settings-models": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-code-runtime": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-compaction": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-fs": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-output-retention": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-sandbox": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-scope": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-session-telemetry": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-session-title-llm": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-shell": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-spill": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-subagent-in-process-driver": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-subprocess": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-timeout": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-workflow": "^0.1.0-rc.6"
+    "@deepseek-ai/dsh": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-anonymous-user-id": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-atomic-write": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-bash-local": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings-models": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-code-runtime": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-compaction": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-fs": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-output-retention": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-sandbox": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-scope": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-session-telemetry": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-session-title-llm": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-shell": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-spill": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-subagent-in-process-driver": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-subprocess": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-timeout": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-workflow": "^0.1.5-rc.1"
   },
   "build": {
     "appId": "com.dsh.desktop",
@@ -57,6 +57,11 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
+    "publish": {
+      "provider": "github",
+      "owner": "gniygniynus",
+      "repo": "dsh-desktop"
+    },
     "extraResources": [
       {
         "from": "plugins/dsh-session-rewind",
@@ -66,6 +71,7 @@
   },
   "devDependencies": {
     "electron": "^43.4.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "electron-updater": "^6.3.9"
   }
 }
