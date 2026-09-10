@@ -17,7 +17,7 @@ function applyHmrPatch() {
   const libDir = join(APP, "node_modules", "@deepseek-ai", "dsh", "lib");
   const files = readdirSync(libDir).filter((f) => f.startsWith("profile-boot-") && f.endsWith(".js"));
   const MARK = "// [dsh-desktop] HMR disabled";
-  const ANCHOR = '\tif (!signalShutdown.signal.aborted && ctx.fiber.state === 2 && ctx.get("loader") !== void 0) try {';
+  const ANCHOR = '\tif (composed.profile.patchReload === "live" && !signalShutdown.signal.aborted && ctx.fiber.state === 2 && ctx.get("loader") !== void 0) try {';
   // profile-boot-* 可能有多个文件（stub + 真实现），只 patch 含 HMR 块的那个
   let target = null;
   for (const f of files) {
