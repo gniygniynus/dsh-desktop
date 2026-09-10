@@ -31,7 +31,10 @@
     "@deepseek-ai/dsh-subagent-in-process-driver": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-subprocess": "^0.1.5-rc.1",
     "@deepseek-ai/dsh-timeout": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-workflow": "^0.1.5-rc.1"
+    "@deepseek-ai/dsh-workflow": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-jobs": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-settings": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-session-persistence": "^0.1.5-rc.1"
   },
   "build": {
     "appId": "com.dsh.desktop",
