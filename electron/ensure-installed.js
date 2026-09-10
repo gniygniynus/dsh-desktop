@@ -9,6 +9,7 @@
 import { existsSync, readFileSync, writeFileSync, symlinkSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { execFileSync } from "node:child_process";
 
 const dshHome = () => process.env.DSH_HOME || join(homedir(), ".dsh");
 
@@ -49,6 +50,26 @@ export function ensureInstalled(appRoot) {
         } catch {}
       }
     }
+  }
+
+  // ── 3. 桌面快捷方式 ──
+  // NSIS 安装包默认只建开始菜单，这里补建桌面快捷方式（幂等）。
+  if (process.platform === "win32" && appRoot) {
+    try {
+      const exePath = join(appRoot, "..", "..", "dsh-desktop.exe");
+      const desktop = join(homedir(), "Desktop", "dsh-desktop.lnk");
+      if (!existsSync(desktop) && existsSync(exePath)) {
+        const ps = [
+          `$s=(New-Object -COM WScript.Shell).CreateShortcut('${desktop}')`,
+          `$s.TargetPath='${exePath}'`,
+          `$s.WorkingDirectory='${join(appRoot, "..", "..")}'`,
+          `$s.Description='dsh-desktop'`,
+          `$s.Save()`
+        ].join(";");
+        execFileSync("powershell", ["-NoProfile", "-Command", ps], { timeout: 5000 });
+        changed = true;
+      }
+    } catch {}
   }
 
   return { changed };
