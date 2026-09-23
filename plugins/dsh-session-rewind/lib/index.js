@@ -42,7 +42,8 @@ class SessionRewindService extends TypertRemoteService {
   async _resolveHeader(sessionId) {
     const live = this.ctx.sessions.get(sessionId);
     if (live !== void 0) return live.header;
-    const snaps = await this.ctx.sessionPersistence.listSnapshots();
+    // 0.1.5: 持久化 API 是 list()（旧版叫 listSnapshots，已不存在）
+    const snaps = await this.ctx.sessionPersistence.list();
     return snaps.find((s) => s.header.id === sessionId)?.header;
   }
 
@@ -98,7 +99,7 @@ class SessionRewindService extends TypertRemoteService {
     const deletedIds = [sessionId];
     let snaps;
     try {
-      snaps = await this.ctx.sessionPersistence.listSnapshots();
+      snaps = await this.ctx.sessionPersistence.list();
       for (const s of snaps) if (s.header.parentSession === sessionId) deletedIds.push(s.header.id);
     } catch {
       snaps = [];
