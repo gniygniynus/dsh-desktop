@@ -53,6 +53,56 @@ function flattenError(e) {
   return out;
 }
 
+async function seedHarnessCookie(port, url) {
+  // dsh 0.1.5 web UI 用 token→cookie 认证。webview 从 file:// 加载 http://127.0.0.1 属跨站，
+  // SameSite=Strict 的 cookie 不会在 webview 里自动保留 → 黑屏/认证提示。
+  // 这里用 node:http 访问带 token 的 URL，把 Set-Cookie 预种进 webview 的固定分区
+  // （persist:dsh-harness），webview 后续请求就能带上 cookie。
+  try {
+    const { request } = await import("node:http");
+    const raw = await new Promise((resolve, reject) => {
+      const req = request(url, { method: "GET" }, (res) => {
+        const setCookies = res.headers["set-cookie"] ?? [];
+        res.resume(); // 丢弃响应体
+        resolve(setCookies);
+      });
+      req.on("error", reject);
+      req.end();
+    });
+    if (raw.length === 0) {
+      // 既无 Set-Cookie 也无认证要求（token 直接生效），无需预种
+      log("[auth] 未收到 Set-Cookie，跳过预种");
+      return;
+    }
+    const harnessSession = session.fromPartition("persist:dsh-harness");
+    for (const header of raw) {
+      const [pair, ...rest] = header.split(";");
+      const eq = pair.indexOf("=");
+      if (eq < 0) continue;
+      const name = pair.slice(0, eq).trim();
+      const value = pair.slice(eq + 1).trim();
+      const attrs = [];
+      for (const s of rest) {
+        const [k, ...v] = s.trim().split("=");
+        attrs.push([k.toLowerCase(), v.join("=")]);
+      }
+      const get = (k) => attrs.find(([key]) => key === k)?.[1];
+      await harnessSession.cookies.set({
+        url: `http://127.0.0.1:${port}`,
+        name,
+        value,
+        httpOnly: true,
+        secure: false,
+        sameSite: get("samesite") === "lax" ? "lax" : get("samesite") === "none" ? "no_restriction" : "unspecified",
+        expirationDate: get("max-age") ? Math.floor(Date.now() / 1000) + Number(get("max-age")) : undefined,
+      });
+    }
+    log(`[auth] 已预种 ${raw.length} 个认证 cookie → ${port}`);
+  } catch (e) {
+    log("[auth] 预种 cookie 失败: " + (e?.message || String(e)));
+  }
+}
+
 async function createWindow(port, url) {
   win = new BrowserWindow({
     width: 1440,
@@ -70,6 +120,8 @@ async function createWindow(port, url) {
     },
   });
   win.once("ready-to-show", () => win.show());
+  // 在主进程里预种认证 cookie 到 webview 分区（token→cookie）
+  await seedHarnessCookie(port, url);
   await win.loadFile(resolve(__dirname, "..", "renderer", "index.html"), { query: { port: String(port) } });
   // 兜底：即使 renderer 先于 IPC 初始化，也可主动推一次授权 URL（幂等）
   if (win && !win.isDestroyed()) win.webContents.send("app:set-url", { port, url });
