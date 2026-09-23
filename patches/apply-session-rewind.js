@@ -307,8 +307,8 @@ function applyChatRewindPatch() {
 function applySettingsModelsPatch() {
   const target = resolveTarget(join("dsh-client-ui-settings-models", "lib", "client.js"));
 
-  const pasteFuncs = `var ROUTE_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-function parseProviderPaste(text) {
+  const pasteFuncs = `function parseProviderPaste(text) {
+  var ROUTE_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
   var s = String(text ?? "").trim();
   if (!s) return { ok: false, reason: "empty" };
   var obj;
