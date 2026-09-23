@@ -4,7 +4,7 @@ import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { appendFileSync, statSync, renameSync, rmSync } from "node:fs";
 import { applyUaPatch } from "../patches/apply.js";
-import { startHarness, harnessPort } from "./harness-lifecycle.js";
+import { startHarness, harnessPort, harnessUrl } from "./harness-lifecycle.js";
 import { ensureInstalled } from "./ensure-installed.js";
 import { createRequire } from "node:module";
 
@@ -27,7 +27,6 @@ function rotateLogIfNeeded() {
 rotateLogIfNeeded();
 function log(...msgs) {
   const line = `[${new Date().toISOString()}] ${msgs.join(" ")}`;
-  try { appendFileSync(LOG_FILE, line + "\n", "utf8"); } catch {}
   console.log(line);
 }
 // 把 harness boot 的 stdout/stderr 也 tee 进日志（它们通常是诊断关键）
@@ -54,7 +53,7 @@ function flattenError(e) {
   return out;
 }
 
-async function createWindow(port) {
+async function createWindow(port, url) {
   win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -72,8 +71,8 @@ async function createWindow(port) {
   });
   win.once("ready-to-show", () => win.show());
   await win.loadFile(resolve(__dirname, "..", "renderer", "index.html"), { query: { port: String(port) } });
-  // 兜底：即使 query 没传成功，也主动把端口推给渲染层（幂等）
-  if (win && !win.isDestroyed()) win.webContents.send("app:set-port", port);
+  // 兜底：即使 renderer 先于 IPC 初始化，也可主动推一次授权 URL（幂等）
+  if (win && !win.isDestroyed()) win.webContents.send("app:set-url", { port, url });
 }
 
 app.whenReady().then(async () => {
@@ -90,9 +89,9 @@ app.whenReady().then(async () => {
     log("[app] webview 缓存已清");
     applyUaPatch();
     log("[app] UA 补丁已就绪");
-    const port = await startHarness("web");
+    const { port, url } = await startHarness("web");
     log("[app] harness 就绪 @ " + port);
-    await createWindow(port);
+    await createWindow(port, url);
     log("[app] 窗口已创建");
     // 启动后 5 秒检查更新（不阻断启动）
     setTimeout(() => checkForUpdates(), 5000);
@@ -107,6 +106,7 @@ app.whenReady().then(async () => {
 });
 
 ipcMain.handle("app:get-port", () => harnessPort());
+ipcMain.handle("app:get-url", () => ({ port: harnessPort(), url: harnessUrl() }));
 // 渲染层诊断：把 renderer/webview 事件写进 desktop.log
 ipcMain.on("renderer:log", (_e, msg) => log("[renderer] " + msg));
 

@@ -9,7 +9,7 @@ import { cpSync, rmSync, mkdirSync, existsSync, readFileSync, writeFileSync, rea
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
-import { applyApiRemotesPatch, applyWorkspaceDeletePatch, applyConversationRewindPatch, applySettingsModelsPatch } from "../patches/apply-session-rewind.js";
+import { applyApiRemotesPatch, applyWorkspaceDeletePatch, applyChatRewindPatch, applySettingsModelsPatch } from "../patches/apply-session-rewind.js";
 import { applyCredentialsLocal, applyApiproxy, applySettingsModels, applyClientConnection } from "../patches/apply-provider-editor.js";
 import { applyDirectoryPicker } from "../patches/apply-directory-picker.js";
 import { applyModelEditor } from "./patch-model-editor.mjs";
@@ -31,45 +31,59 @@ function resolveDshNodeModules() {
   }
 }
 const DEST = join(resolveDshNodeModules(), "@deepseek-ai", "dsh-session-rewind");
+const LEGACY_DEST = join(homedir(), ".dsh", "profiles", "node_modules", "@deepseek-ai", "dsh-session-rewind");
 
-// 1. 复制插件到全局 harness node_modules
+function syncPlugin(dest) {
+  mkdirSync(dirname(dest), { recursive: true });
+  try {
+    rmSync(dest, { recursive: true, force: true });
+  } catch (e) {
+    console.error("[install] 无法删除旧插件（可能有进程正在使用），请先退出 dsh-desktop 再重试：", String(e));
+    process.exit(1);
+  }
+  mkdirSync(dest, { recursive: true });
+  cpSync(join(SRC, "package.json"), join(dest, "package.json"));
+  cpSync(join(SRC, "lib"), join(dest, "lib"), { recursive: true });
+  console.log("[install] 插件已复制 →", dest);
+}
+
+// 1. 复制插件到当前/旧版两个可能的加载位置
 if (!existsSync(join(SRC, "package.json"))) {
   console.error("[install] 找不到插件源码:", SRC);
   process.exit(1);
 }
-mkdirSync(dirname(DEST), { recursive: true });
-// 注意：若 Electron app 正在运行，Windows 文件锁可能导致删除/写入失败。
-// 安装前请先退出 dsh-desktop。
-try {
-  rmSync(DEST, { recursive: true, force: true });
-} catch (e) {
-  console.error("[install] 无法删除旧插件（可能有进程正在使用），请先退出 dsh-desktop 再重试：", String(e));
-  process.exit(1);
-}
-mkdirSync(DEST, { recursive: true });
-cpSync(join(SRC, "package.json"), join(DEST, "package.json"));
-cpSync(join(SRC, "lib"), join(DEST, "lib"), { recursive: true });
-console.log("[install] 插件已复制 →", DEST);
+syncPlugin(DEST);
+syncPlugin(LEGACY_DEST);
 
 // 2. 应用所有 client 补丁（session-rewind + provider-editor + directory-picker + model-editor）
 let patchFailed = false;
 const allPatches = [
   // session-rewind 核心（删除/撤回/重新回答/粘贴识别）
-  applyApiRemotesPatch, applyWorkspaceDeletePatch, applyConversationRewindPatch, applySettingsModelsPatch,
+  ["api-remotes", applyApiRemotesPatch],
+  ["workspace", applyWorkspaceDeletePatch],
+  ["chat", applyChatRewindPatch],
+  ["settings-models", applySettingsModelsPatch],
   // provider-editor（key 回显/眼睛按钮/解锁覆盖 env key）
-  applyCredentialsLocal, applyApiproxy, applySettingsModels, applyClientConnection,
+  ["credentials-local", applyCredentialsLocal],
+  ["apiproxy-cred", applyApiproxy, true],
+  ["settings-provider", applySettingsModels, true],
+  ["client-connection-cred", applyClientConnection, true],
   // directory-picker（Electron 环境用原生对话框）
-  applyDirectoryPicker,
+  ["directory-picker", applyDirectoryPicker],
   // model-editor（1M 上下文 + 思考等级勾选）
-  applyModelEditor,
+  ["model-editor", applyModelEditor],
 ];
-for (const apply of allPatches) {
+for (const [name, apply, optional] of allPatches) {
   try {
     const r = apply();
     console.log(`[install] ${r.label}: ${r.changed ? "已打补丁" : "已是最新（跳过）"}`);
   } catch (e) {
-    patchFailed = true;
-    console.error("[install] " + e.message);
+    if (optional) {
+      console.warn(`[install] ${name} 跳过（接口已变，不影响主功能）: ` + (e.message || String(e)).slice(0, 120));
+    } else {
+      patchFailed = true;
+      console.error("[install] " + e.message);
+    }
   }
 }
 if (patchFailed) {
@@ -84,7 +98,7 @@ if (existsSync(homePatch)) {
   const content = readFileSync(homePatch, "utf8");
   const trimmed = content.trim();
   // 空数组 `[]` 或空文件：直接覆盖成 entry（否则追加会造成两个顶层 YAML 数组，非法）
-  if (/^\[[\s]*\]$/.test(trimmed) || trimmed === "") {
+  if (/^\[\s*\]$/.test(trimmed) || trimmed === "") {
     writeFileSync(homePatch, entry + "\n", "utf8");
     console.log("[install] 已写入", homePatch);
   } else if (content.includes("session-rewind")) {

@@ -31,8 +31,9 @@ function markRemoteMethod(ServiceClass, methodName) {
 }
 
 class SessionRewindService extends TypertRemoteService {
-  // 0.1.5: apiProxy 已移除，直接用 sessions（SessionStore）+ workspaceRegistry + agents
-  static inject = ["sessionPersistence", "workspaceRegistry", "sessions", "agents"];
+  // 0.1.5: apiProxy 已移除。用 sessionController 建/分叉会话（它内部会建 agent + attach workspace），
+  // sessions 仅用于读 live 会话事件与 detach。
+  static inject = ["sessionPersistence", "workspaceRegistry", "sessions", "agents", "sessionController"];
 
   constructor(ctx) {
     super(ctx, "sessionRewind");
@@ -64,6 +65,29 @@ class SessionRewindService extends TypertRemoteService {
     try {
       const ws = this.ctx.workspaceRegistry.list().find((w) => w.sessionIds.includes(sessionId));
       if (ws !== void 0) await ws.archiveSession(sessionId);
+    } catch {}
+  }
+
+  /** 找到会话所属 workspace（用于 create 时挂到同一 workspace）。 */
+  _findWorkspace(sessionId) {
+    try {
+      return this.ctx.workspaceRegistry.list().find((w) => w.sessionIds.includes(sessionId));
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** 从 live SessionStore 移除一个会话（文件已删，session.list 不应再返回它）。
+   *  0.1.5 的 store 是 Map<id, entry>，detachEntered 接收 entry 对象。
+   *  detachEntered 标记 private，但 JS 运行时可用；harness 升级可能碎。 */
+  _detachLive(sessionId) {
+    try {
+      const store = this.ctx.sessions?.store;
+      if (store === void 0 || typeof store.get !== "function") return;
+      const entry = store.get(sessionId);
+      if (entry !== void 0 && typeof this.ctx.sessions.detachEntered === "function") {
+        this.ctx.sessions.detachEntered(entry);
+      }
     } catch {}
   }
 
@@ -134,12 +158,15 @@ class SessionRewindService extends TypertRemoteService {
     const events = await this._readEvents(sessionId);
     const prevEndSeq = this._computePrevEndSeq(events, atSeq);
     if (prevEndSeq === undefined) {
-      // 撤回第一条消息（无上一轮）＝ 创建空会话＋归档母
+      // 撤回第一条消息（无上一轮）＝ 创建空会话（同 workspace）＋归档母
       try {
-        const child = this.ctx.sessions.create(undefined, {
-          meta: { cwd: header.cwd ?? "" }
-        });
-        const newId = child.id;
+        const ws = this._findWorkspace(sessionId);
+        const created = await this.ctx.sessionController.create(
+          ws !== void 0
+            ? { workspaceId: ws.id }
+            : header.cwd !== void 0 ? { cwd: header.cwd } : {},
+        );
+        const newId = created.sessionId;
         await this._archiveMother(sessionId);
         return success({ sessionId: newId });
       } catch (error) {
@@ -149,8 +176,8 @@ class SessionRewindService extends TypertRemoteService {
 
     let childId;
     try {
-      const child = this.ctx.sessions.fork(sessionId, prevEndSeq);
-      childId = child.id;
+      const child = await this.ctx.sessionController.fork({ sessionId, atSeq: prevEndSeq });
+      childId = child.sessionId;
     } catch (error) {
       return rejected({ code: "fork-failed", sessionId, message: String(error) });
     }
@@ -183,12 +210,16 @@ class SessionRewindService extends TypertRemoteService {
     if (userMsg === void 0) return rejected({ code: "no-user-message", sessionId });
     const prevEndSeq = this._computePrevEndSeq(events, atSeq);
     if (prevEndSeq === undefined) {
-      // 重新回答第一轮的 AI 回复：建空会话 + followup 用户消息重跑 + 归档母
+      // 重新回答第一轮的 AI 回复：建空会话（同 workspace）+ followup 重跑 + 归档母
       try {
-        const child = this.ctx.sessions.create(undefined, {
-          meta: { cwd: header.cwd ?? "" }
-        });
-        const newId = child.id;
+        const ws = this._findWorkspace(sessionId);
+        const created = await this.ctx.sessionController.create(
+          ws !== void 0
+            ? { workspaceId: ws.id }
+            : header.cwd !== void 0 ? { cwd: header.cwd } : {},
+        );
+        const newId = created.sessionId;
+        // sessionController.create 已建 agent，可直接 followup
         try {
           const agent = this.ctx.agents?.get(newId);
           if (agent?.followup !== void 0) agent.followup(userMsg);
@@ -202,13 +233,13 @@ class SessionRewindService extends TypertRemoteService {
 
     let childId;
     try {
-      const child = this.ctx.sessions.fork(sessionId, prevEndSeq);
-      childId = child.id;
+      const child = await this.ctx.sessionController.fork({ sessionId, atSeq: prevEndSeq });
+      childId = child.sessionId;
     } catch (error) {
       return rejected({ code: "fork-failed", sessionId, message: String(error) });
     }
 
-    // followup 原用户消息重跑
+    // followup 原用户消息重跑（sessionController.fork 已建 agent）
     try {
       const agent = this.ctx.agents?.get(childId);
       if (agent?.followup !== void 0) agent.followup(userMsg);

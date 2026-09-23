@@ -25,9 +25,27 @@ async function getRunProfile() {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const state = { ctx: null, shutdown: null, port: 0, booting: null };
+const state = { ctx: null, shutdown: null, port: 0, url: "", booting: null };
 
 export function harnessPort() { return state.port; }
+export function harnessUrl() { return state.url; }
+
+// dsh 0.1.5 起 web UI 需要 URL 带一次性 token（否则返回 "dsh web authentication required"）。
+// 权威 URL 由 dsh-web-app 在 loader settle 后打印（`dsh web: http://127.0.0.1:PORT/?token=...`），
+// 根 ctx 上 `ctx.get("connection")` 拿不到该服务（官方用 ctx.inject 作用域回调），
+// 所以这里直接捕获 stdout 里那行，最可靠。
+let _printedUrl = "";
+{
+  const origWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk, enc, cb) => {
+    try {
+      const s = typeof chunk === "string" ? chunk : String(chunk);
+      const m = s.match(/dsh web:\s*(https?:\/\/\S+)/);
+      if (m !== null) _printedUrl = m[1];
+    } catch {}
+    return origWrite(chunk, enc, cb);
+  };
+}
 
 export async function startHarness(profile = "web") {
   if (state.booting) return state.booting;
@@ -46,7 +64,8 @@ export async function startHarness(profile = "web") {
     // "--port <port> | pass 0 to let the OS pick a free one"），避免与已跑的全局 dsh web(3080) 撞车。
     // 显式设 DSH_DESKTOP_PORT 可固定端口（便于转发/外部访问）。
     const portArg = process.env.DSH_DESKTOP_PORT ? ["--port", String(Number(process.env.DSH_DESKTOP_PORT))] : ["--port", "0"];
-    const { ctx, shutdown } = await runProfile({ environment, profile, patchFiles: [], args: [...portArg] });
+    _printedUrl = ""; // 重启时清掉上一次捕获的 URL
+    const { ctx, shutdown } = await runProfile({ environment, profile, patchFiles: [], args: [...portArg, "--no-open"] });
     state.ctx = ctx;
     state.shutdown = shutdown;
 
@@ -58,8 +77,22 @@ export async function startHarness(profile = "web") {
       else await sleep(500);
     }
     if (!port) throw new Error("[harness] webServer 端口未就绪");
+
+    // 等 harness 打印带 token 的 URL（dsh-web-app 在 loader settle 后打印，通常紧随端口就绪）。
+    for (let i = 0; i < 20 && _printedUrl === ""; i++) await sleep(250);
+
+    let url = _printedUrl;
+    if (url === "") {
+      // 回退：本地拼一个（无 token，会被 harness 要求重新认证）
+      const connection = ctx.get("connection");
+      url = typeof connection?.authenticatedUrl === "function"
+        ? connection.authenticatedUrl(`http://127.0.0.1:${port}`)
+        : `http://127.0.0.1:${port}/`;
+    }
     state.port = port;
-    return port;
+    state.url = url;
+    console.log("[harness] url=" + url.replace(/token=[^&]+/, "token=***"));
+    return { port, url };
   })().finally(() => { state.booting = null; });
   return state.booting;
 }
@@ -73,7 +106,7 @@ export async function stopHarness() {
       await Promise.race([call(), new Promise((r) => setTimeout(r, 20000))]);
     } catch {}
   }
-  state.ctx = null; state.shutdown = null; state.port = 0;
+  state.ctx = null; state.shutdown = null; state.port = 0; state.url = "";
 }
 
 /** 静默重启：stop → start，返回新端口。 */
